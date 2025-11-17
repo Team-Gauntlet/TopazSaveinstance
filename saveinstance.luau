@@ -2868,11 +2868,15 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 	local getbytecode
 
-	local function rescriptcode(code)
-	--// This fixes multible checks and upvaules
-	--// Uhh this is a WIP Rn tho
+	local function lookgreat(code)
+		--// also WIP it just makes the code look like real code 
+		--// and be more optimized cuz decomped code is slow asf
 	end
 
+	local function rescriptcode(code)
+	--// WIP, im gonna use this for getting the OG Variable names later
+	--// If you wanna get the uhh like function names and upvaules go to the guy below me
+	end
 	local function johnpork(code) --// dude im gonna fucking blow my brains out if this doesnt work
 		code = string.gsub(code, 
 			"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]", --// thank you hex for finding this! :D
@@ -2882,7 +2886,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		)
 		
 		code = string.gsub(code,
-			"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Line:%s*%d+%s*%]%]%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]", --// TYSM HEX
+			"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Line:%s*%d+%s*%]%]%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
 			function(genericName, params, actualName)
 				return string.format("local function %s(%s)", actualName, params)
 			end
