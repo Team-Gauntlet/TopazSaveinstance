@@ -52,7 +52,7 @@ local service = setmetatable({}, {
 local HttpGet
 do
 	local ExploitHttpGetWorks, _ = pcall(function()
-		return game:HttpGet("https://raw.githubusercontent.com/Devraj2010isme/BetterSaveinstance/refs/heads/main/Dependencies/HttpGetTest", true)
+		return game:HttpGet("https://raw.githubusercontent.com/horizzondev/TopazSaveinstance/refs/heads/main/Dependencies/HttpGetTest", true)
 	end)
 	 
 	if ExploitHttpGetWorks then
@@ -1287,11 +1287,7 @@ do
 		return buffer.tostring(b)
 	end
 
-	local NotScriptableFixes = { --[[
-		For more info:
-		- https://github.com/luau/UniversalSynSaveInstance/blob/main/Tools/NotScriptable-Related/Potentially%20Missing%20Properties%20Dumper/Potentially%20Missing%20Properties%20Dumper.luau
-		- https://github.com/luau/UniversalSynSaveInstance/blob/main/Tools/NotScriptable-Related/NotScriptable%20Dumper/NotScriptable%20Dumper.py
-		]]
+	local NotScriptableFixes = { 
 		Instance = {
 			AttributesSerialize = function(instance)
 				local attrs = instance:GetAttributes()
@@ -2048,7 +2044,7 @@ All options are case insensitive.
   - Default: true
 - decomptype: `string`
   - "custom" - for a built-in custom decompiler.
-  - Uses Konstant 2.1, locally hosted instead of the API to increase speed. ([Konstant Discord Server](https://discord.gg/brNTY8nX8t), [Konstant Decompiled Source Code](https://raw.githubusercontent.com/Devraj2010isme/BetterSaveinstance/refs/heads/main/Dependencies/Konstant%20V2.1.luau))
+  - Uses Konstant 2.1, locally hosted instead of the API to increase speed. ([Konstant Discord Server](https://discord.gg/brNTY8nX8t), [Konstant Decompiled Source Code](https://raw.githubusercontent.com/horizzondev/TopazSaveinstance/refs/heads/main/Dependencies/Konstant%20V2.1.luau))
   - Default: Your executor's decompiler, if available. Otherwise uses "custom" if not.
 - timeout: `number`
   - If the decompilation run time exceeds this value it gets cancelled.
@@ -2196,7 +2192,7 @@ All options are case insensitive.
     - If Parameter_1 is an Instance, then it will be assumed to be SynSaveInstance.CustomOptions table.Object.
     - If Parameter_1 is a table filled with instances ({Instance}), then it will be assumed to be SynSaveInstance.CustomOptions table.ExtraInstances and IsModel will be true
     - This exists for sake compatibility with saveinstance(game, {})
-- ) → ()
+- ) �?? ()
 ]=]
 
 local function synsaveinstance(CustomOptions, CustomOptions2)
@@ -2214,7 +2210,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local currentstr, currentsize, totalsize, chunks = "", 0, 0, table.create(1)
 	local savebuffer, savebuffer_size = {}, 1
 	local header =
-		'<!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw --><roblox version="4">'
+		'<!-- Saved script using Topaz--><roblox version="4">'
 
 	local StatusText
 
@@ -2223,7 +2219,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		noscripts = false,
 		scriptcache = true,
 		decomptype = "",
-		timeout = 10,
+		timeout = 30,
 		-- * New:
 		__DEBUG_MODE = false,
 		DisableGethiddenpropertyFallback = (gethiddenproperty and EXECUTOR_NAME ~= "Nihon") or false,
@@ -2234,7 +2230,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		-- MaxThreads = 3 -- Description: The number of decompilation threads that can run at once. More threads means it can decompile for scripts at a time.
 		-- DisableCompression = false, --Description: Disables compression in the binary output
 
-		DecompileJobless = false,
+		DecompileJobless = false, --// dont make a job joke please
 		DecompileIgnore = { -- * Clean these up (merged Old Syn and New Syn)
 			-- "Chat",
 			"TextChatService",
@@ -2504,7 +2500,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		if writefile and appendfile then
 			__DEBUG_MODE = true
 			local CRASHLOG_ID = service.HttpService:GenerateGUID(false)
-			writefile("CRASHLOG_"..CRASHLOG_ID, "BetterSaveinstance crashlog (id:"..CRASHLOG_ID..", placeid:"..tostring(game.PlaceId)..") below")
+			writefile("CRASHLOG_"..CRASHLOG_ID, "Topaz crashlog (id:"..CRASHLOG_ID..", placeid:"..tostring(game.PlaceId)..") below")
 			Crashlog = function(text)
 				appendfile("CRASHLOG_"..CRASHLOG_ID, "\n ["..tostring(DateTime.now().UnixTimestampMillis).."] "..text)
 			end
@@ -2656,7 +2652,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			placename ..= FileType
 		end
 		if GLOBAL_ENV[placename] then
-			-- warn("UniversalSynSaveInstance is already saving to this file")
+			-- warn("Topaz is already saving to this file")
 			return
 		end
 
@@ -2782,6 +2778,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		return Size
 	end
 
+
 	local RunService = service.RunService
 	local function wait_for_render()
 		RunService.RenderStepped:Wait()
@@ -2797,7 +2794,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			end
 			Loading = task.spawn(function()
 				local spinner_count = 0
-				local chars = { "|", "/", "—", "\\" }
+				local chars = { "|", "/", "�??", "\\" }
 				local chars_size = #chars
 
 				local function getLoadingText()
@@ -2871,6 +2868,22 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	end
 
 	local getbytecode
+	local function johnpork(code) --// dude im gonna fucking blow my brains out if this doesnt work
+		code = string.gsub(code, 
+			"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]", --// thank you hex for finding this! :D
+			function(genericName, params, actualName)
+				return string.format("local function %s(%s)", actualName, params)
+			end
+		)
+		code = string.gsub(code,
+			"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Line:%s*%d+%s*%]%]%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]", --// TYSM HEX
+			function(genericName, params, actualName)
+				return string.format("local function %s(%s)", actualName, params)
+			end
+		)
+		code = string.gsub(code, "%-%-%[%[.-%]%]", "")
+		return code
+	end
 	if getscriptbytecode then
 		getbytecode = construct_TimeoutHandler(3, getscriptbytecode) -- ? Solara fix
 	end
@@ -2903,7 +2916,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	if getscriptbytecode then
 		if (decompile == nil and OPTIONS.decomptype == "") or OPTIONS.decomptype == "custom" then
 			if __DEBUG_MODE then __DEBUG_MODE("Attempting to load Konstant Decompiler. If there is an error/crash after this, set the option decomptype to any string other than custom") end
-			local url = "https://raw.githubusercontent.com/Devraj2010isme/BetterSaveinstance/refs/heads/main/Dependencies/Konstant%20V2.1.luau"
+			local url = "https://raw.githubusercontent.com/horizzondev/TopazSaveinstance/refs/heads/main/Dependencies/Konstant%20V2.1.luau"
 			local konstant = loadstring(HttpGet(url, true))()
 			GLOBAL_ENV.decompile = konstant.decompile
 			if __DEBUG_MODE then __DEBUG_MODE("Konstant Decompiler loaded") end
@@ -2978,7 +2991,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				local output
 				if ok then
 					result = string.gsub(result, "\0", "\\0") -- ? Some decompilers sadly output \0 which prevents files from opening
-					output = result
+					output = johnpork(result) --// this fixes function names (atleast it should)
 				else
 					output = "--[[ Failed to decompile. Reason:\n" .. (result or "") .. "\n]]"
 				end
@@ -3722,7 +3735,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 													and instance:IsA("Script")
 													and instance.RunContext ~= Enum.RunContext.Client
 											then
-												value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save" -- TODO: Could be not just server scripts in the future
+												value = "-- Server Scripts CANNOT be saved due to Filtering Enabled!" -- TODO: Could be not just server scripts in the future
 											else
 												local IsCompilationError = false
 												if CompilationError then
@@ -3758,7 +3771,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										value = "-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw\n\n"
+										value = "-- Saved script using Topaz\n\n"
 											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
 											.. value
 									end
@@ -3924,23 +3937,25 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				{Source = {raw = "--[[\n"
 					.. (#RecoveredScripts ~= 0 and "\t\tIMPORTANT: Original Source of these Scripts was Recovered: " .. service.HttpService:JSONEncode(
 						RecoveredScripts
-					) .. "\n" or "")
-					.. [[
-		Thank you for using BetterSaveinstance (Fork of UniversalSynSaveInstance). Their discord: https://discord.gg/wx4ThpAsmw.
+						) .. "\n" or "")
+						.. [[
+		Thank you for using Topaz!
+		This version uses the Topaz decompiler for the best script recovery.
 
 		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
 		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
 
-		ServerStorage, ServerScriptService and Server Scripts are IMPOSSIBLE to save because of FilteringEnabled.
+		ServerStorage, ServerScriptService and Server Scripts CANNOT be saved due to Filtering Enabled
 
-		If your player cannot spawn into the game, please move PlayerModule in StarterPlayer somewhere else or delete it. Then run `game:GetService("Players").CharacterAutoLoads = true`.
+		Dont cry if you cant decompile serverscripts, module, and localscripts CAN be saved
+
+		If you cannot spawn into the game, please move PlayerModule in StarterPlayer somewhere else or delete it. Then run `game:GetService("Players").CharacterAutoLoads = true`.
 		And use "Play Here" to start game instead of "Play" to spawn your Character where your Camera currently is.
 
 		If the chat system does not work, please use the explorer and delete everything inside the TextChatService/Chat service(s). 
 		Or run `game:GetService("Chat"):ClearAllChildren() game:GetService("TextChatService"):ClearAllChildren()`
 				
 		If Union and MeshPart collisions don't work, run the script below in the Studio Command Bar:
-				
 				
 		local C = game:GetService("CoreGui")
 		local D = Enum.CollisionFidelity.Default
@@ -3960,18 +3975,19 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		This file was generated with the following settings:
 		]]
-					.. service.HttpService:JSONEncode(OPTIONS)
-					.. "\n\n\t\tElapsed time: "
-					.. os.clock() - elapse_t
-					.. " PlaceId: "
-					.. game.PlaceId
-					.. " PlaceVersion: "
-					.. game.PlaceVersion
-					.. " Client Version: "
-					.. version()
-					.. " Executor: "
-					.. (identify_executor and table.concat({ identify_executor() }, " ") or "Unknown")
-					.. "\n]]", ValueType = "ProtectedString"}}
+						.. service.HttpService:JSONEncode(OPTIONS)
+						.. "\n\n\t\tDecompiler: Topaz"
+						.. "\n\t\tElapsed time: "
+						.. os.clock() - elapse_t
+						.. " PlaceId: "
+						.. game.PlaceId
+						.. " PlaceVersion: "
+						.. game.PlaceVersion
+						.. " Client Version: "
+						.. version()
+						.. " Executor: "
+						.. (identify_executor and table.concat({ identify_executor() }, " ") or "Unknown")
+						.. "\n]]", ValueType = "ProtectedString"}}
 			)
 		end
 		do
@@ -3989,7 +4005,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw -->"
+			"</roblox><!-- Saved script using Topaz -->"
 		savebuffer_size += 1
 		save_cache(true)
 		do
