@@ -2949,7 +2949,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			return string.format("(%s)", table.concat(actualParamsList, ", "))
 		end
 	)  --// I copied all of this straight from vscode without testing idk if this works AT ALL please test this later
-	local varMapping = {} --// I forked this from a dif repo so def recode this in the future cuz its kinda ass
+	local varMapping = {}
 	for genericName, actualName in string.gmatch(code, "local (v%d+)%s*=%s*[^\n]*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
 		varMapping[genericName] = actualName
 	end
