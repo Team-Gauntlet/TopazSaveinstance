@@ -1,7 +1,6 @@
 --!native
 --!optimize 2
 --!divine-intellect
--- https://discord.gg/wx4ThpAsmw
 
 local function string_find(s, pattern)
 	return string.find(s, pattern, nil, true)
@@ -2875,12 +2874,79 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				return string.format("local function %s(%s)", actualName, params)
 			end
 		)
+		
 		code = string.gsub(code,
 			"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Line:%s*%d+%s*%]%]%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]", --// TYSM HEX
 			function(genericName, params, actualName)
 				return string.format("local function %s(%s)", actualName, params)
 			end
 		)
+		
+		code = string.gsub(code,
+			"local (v%d+)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
+			function(genericName, actualName)
+				return string.format("local %s", actualName)
+			end
+		)
+		
+		code = string.gsub(code,
+			"local (v%d+)%s*(=%s*[^\n]+)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
+			function(genericName, assignment, actualName)
+				return string.format("local %s%s", actualName, assignment)
+			end
+		)
+		
+		code = string.gsub(code,
+			"local ([v%d, ]+)%s*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]",
+			function(genericNames, actualNames)
+				local actualNamesList = {}
+				for name in string.gmatch(actualNames, "[%w_]+") do
+					table.insert(actualNamesList, name)
+				end
+				return string.format("local %s", table.concat(actualNamesList, ", "))
+			end
+		)
+		
+		code = string.gsub(code,
+			"local ([v%d, ]+)%s*(=%s*[^\n]+)%s*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]",
+			function(genericNames, assignment, actualNames)
+				local actualNamesList = {}
+				for name in string.gmatch(actualNames, "[%w_]+") do
+					table.insert(actualNamesList, name)
+				end
+				return string.format("local %s%s", table.concat(actualNamesList, ", "), assignment)
+			end
+		)
+		
+		code = string.gsub(code,
+			"for (v%d+)%s*(=%s*[^\n]+do)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
+			function(genericName, forRest, actualName)
+				return string.format("for %s%s", actualName, forRest)
+			end
+		)
+		
+		code = string.gsub(code,
+			"for ([v%d, ]+)%s*(in%s*[^\n]+do)%s*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]",
+			function(genericNames, forRest, actualNames)
+				local actualNamesList = {}
+				for name in string.gmatch(actualNames, "[%w_]+") do
+					table.insert(actualNamesList, name)
+				end
+				return string.format("for %s %s", table.concat(actualNamesList, ", "), forRest)
+			end
+		)
+		
+		code = string.gsub(code,
+			"%(([v%d, ]+)%)%s*%-%-%[%[%s*Params:%s*([%w_, ]+)%s*%]%]",
+			function(genericParams, actualParams)
+				local actualParamsList = {}
+				for name in string.gmatch(actualParams, "[%w_]+") do
+					table.insert(actualParamsList, name)
+				end
+				return string.format("(%s)", table.concat(actualParamsList, ", "))
+			end
+		)
+		
 		code = string.gsub(code, "%-%-%[%[.-%]%]", "")
 		return code
 	end
