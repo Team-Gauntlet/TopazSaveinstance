@@ -2877,90 +2877,112 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	--// WIP, im gonna use this for getting the OG Variable names later
 	--// If you wanna get the uhh like function names and upvaules go to the guy below me
 	end
-	local function johnpork(code) --// dude im gonna fucking blow my brains out if this doesnt work
-		code = string.gsub(code, 
-			"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]", --// thank you hex for finding this! :D
-			function(genericName, params, actualName)
-				return string.format("local function %s(%s)", actualName, params)
-			end
-		)
-		
-		code = string.gsub(code,
-			"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Line:%s*%d+%s*%]%]%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
-			function(genericName, params, actualName)
-				return string.format("local function %s(%s)", actualName, params)
-			end
-		)
-		
-		code = string.gsub(code,
-			"local (v%d+)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
-			function(genericName, actualName)
-				return string.format("local %s", actualName)
-			end
-		)
-		
-		code = string.gsub(code,
-			"local (v%d+)%s*(=%s*[^\n]+)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
-			function(genericName, assignment, actualName)
-				return string.format("local %s%s", actualName, assignment)
-			end
-		)
-		
-		code = string.gsub(code,
-			"local ([v%d, ]+)%s*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]",
-			function(genericNames, actualNames)
-				local actualNamesList = {}
-				for name in string.gmatch(actualNames, "[%w_]+") do
-					table.insert(actualNamesList, name)
-				end
-				return string.format("local %s", table.concat(actualNamesList, ", "))
-			end
-		)
-		
-		code = string.gsub(code,
-			"local ([v%d, ]+)%s*(=%s*[^\n]+)%s*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]",
-			function(genericNames, assignment, actualNames)
-				local actualNamesList = {}
-				for name in string.gmatch(actualNames, "[%w_]+") do
-					table.insert(actualNamesList, name)
-				end
-				return string.format("local %s%s", table.concat(actualNamesList, ", "), assignment)
-			end
-		)
-		
-		code = string.gsub(code,
-			"for (v%d+)%s*(=%s*[^\n]+do)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
-			function(genericName, forRest, actualName)
-				return string.format("for %s%s", actualName, forRest)
-			end
-		)
-		
-		code = string.gsub(code,
-			"for ([v%d, ]+)%s*(in%s*[^\n]+do)%s*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]",
-			function(genericNames, forRest, actualNames)
-				local actualNamesList = {}
-				for name in string.gmatch(actualNames, "[%w_]+") do
-					table.insert(actualNamesList, name)
-				end
-				return string.format("for %s %s", table.concat(actualNamesList, ", "), forRest)
-			end
-		)
-		
-		code = string.gsub(code,
-			"%(([v%d, ]+)%)%s*%-%-%[%[%s*Params:%s*([%w_, ]+)%s*%]%]",
-			function(genericParams, actualParams)
-				local actualParamsList = {}
-				for name in string.gmatch(actualParams, "[%w_]+") do
-					table.insert(actualParamsList, name)
-				end
-				return string.format("(%s)", table.concat(actualParamsList, ", "))
-			end
-		)
-		
-		code = string.gsub(code, "%-%-%[%[.-%]%]", "")
-		return code
-	end
 
+	local function johnpork(code) --// this took way too long and I CANT test this so if this breaks then we're FUCKED
+	code = string.gsub(code, 
+		"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]", --// Thanks to hex for doing this cuz id actually rather kill myself than type this bullshit
+		function(genericName, params, actualName)
+			return string.format("local function %s(%s)", actualName, params)
+		end
+	) 
+	code = string.gsub(code,
+		"local function (v%d+)%((.-)%)%s*%-%-%[%[%s*Line:%s*%d+%s*%]%]%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
+		function(genericName, params, actualName)
+			return string.format("local function %s(%s)", actualName, params)
+		end
+	)
+	code = string.gsub(code,
+		"local (v%d+)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
+		function(genericName, actualName)
+			return string.format("local %s", actualName)
+		end
+	)
+	code = string.gsub(code,
+		"local (v%d+)%s*(=%s*[^\n]+)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
+		function(genericName, assignment, actualName)
+			return string.format("local %s%s", actualName, assignment)
+		end
+	)
+	code = string.gsub(code,
+		"local ([v%d, ]+)%s*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]",
+		function(genericNames, actualNames)
+			local actualNamesList = {}
+			for name in string.gmatch(actualNames, "[%w_]+") do
+				table.insert(actualNamesList, name)
+			end
+			return string.format("local %s", table.concat(actualNamesList, ", "))
+		end
+	)
+	code = string.gsub(code,
+		"local ([v%d, ]+)%s*(=%s*[^\n]+)%s*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]",
+		function(genericNames, assignment, actualNames)
+			local actualNamesList = {}
+			for name in string.gmatch(actualNames, "[%w_]+") do
+				table.insert(actualNamesList, name)
+			end
+			return string.format("local %s%s", table.concat(actualNamesList, ", "), assignment)
+		end
+	)
+	code = string.gsub(code,
+		"for (v%d+)%s*(=%s*[^\n]+do)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]",
+		function(genericName, forRest, actualName)
+			return string.format("for %s%s", actualName, forRest)
+		end
+	)
+	code = string.gsub(code,
+		"for ([v%d, ]+)%s*(in%s*[^\n]+do)%s*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]",
+		function(genericNames, forRest, actualNames)
+			local actualNamesList = {}
+			for name in string.gmatch(actualNames, "[%w_]+") do
+				table.insert(actualNamesList, name)
+			end
+			return string.format("for %s %s", table.concat(actualNamesList, ", "), forRest)
+		end
+	)
+	code = string.gsub(code,
+		"%(([v%d, ]+)%)%s*%-%-%[%[%s*Params:%s*([%w_, ]+)%s*%]%]",
+		function(genericParams, actualParams)
+			local actualParamsList = {}
+			for name in string.gmatch(actualParams, "[%w_]+") do
+				table.insert(actualParamsList, name)
+			end
+			return string.format("(%s)", table.concat(actualParamsList, ", "))
+		end
+	)  --// I copied most of this from vscode lmao idk if this works AT ALL please test this later
+	local varMapping = {} --// I forked this from a dif repo so def recode this in the future cuz its kinda ass
+	for genericName, actualName in string.gmatch(code, "local (v%d+)%s*=%s*[^\n]*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
+		varMapping[genericName] = actualName
+	end
+	for genericNames, actualNames in string.gmatch(code, "local ([v%d, ]+)%s*=%s*[^\n]*%-%-%[%[%s*Names:%s*([%w_, ]+)%s*%]%]") do
+		local genList = {}
+		local actList = {}
+		for name in string.gmatch(genericNames, "v%d+") do
+			table.insert(genList, name)
+		end
+		for name in string.gmatch(actualNames, "[%w_]+") do
+			table.insert(actList, name)
+		end
+		for i = 1, #genList do
+			if actList[i] then
+				varMapping[genList[i]] = actList[i]
+			end
+		end
+	end
+	code = string.gsub(code, "%s*%-%- upvalues:[^\n]*\n?", "")
+	code = string.gsub(code, "%-%-%[%[.-%]%]", "")
+	local sortedVars = {}
+	for genericName, actualName in pairs(varMapping) do
+		table.insert(sortedVars, {gen = genericName, act = actualName})
+	end
+	table.sort(sortedVars, function(a, b) 
+		return #a.gen > #b.gen 
+	end)
+	for _, pair in ipairs(sortedVars) do
+		-- Match variable names as whole words (with word boundaries)
+		code = string.gsub(code, "%f[%w]" .. pair.gen .. "%f[%W]", pair.act)
+	end
+	return code
+end
 	if getscriptbytecode then
 		getbytecode = construct_TimeoutHandler(3, getscriptbytecode) -- ? Solara fix
 	end
