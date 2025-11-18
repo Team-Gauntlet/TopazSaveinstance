@@ -2793,7 +2793,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			end
 			Loading = task.spawn(function()
 				local spinner_count = 0
-				local chars = { "|", "/", "—", "\" }
+				local chars = { "|", "/", "—", "\\" }
 				local chars_size = #chars
 
 				local function getLoadingText()
