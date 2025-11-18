@@ -2868,156 +2868,185 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 	local getbytecode
 
-	local function lookgreat(code)
-		--// also WIP it just makes the code look like real code 
-		--// and be more optimized cuz decomped code is slow asf
+local function timcheese(code)
+	--// the FINAL function.. 
+	--// this will be used to fully repair the code
+	--// js dont edit this yet cuz I've got plans for it
+end
+
+--// this uses the rescripted code to fix alot of issues with it
+--// example: l_v3_SpeedMultiplier_0 --> SpeedMultiplier
+local function lookgreat(code)
+	if not code or type(code) ~= "string" or #code < 10 then
+		print("Bro </3")
+		return code
 	end
 
-	local function rescriptcode(code)
-		if not code or type(code) ~= "string" or #code < 10 then
-			return code
+	local success, result = pcall(function()
+		code = string.gsub(code, "%f[%w_]l_v%d+_([%w_]+)_%d+%f[^%w_]", "%1")
+		code = string.gsub(code, "%f[%w_]l_([%w_]+)_%d+%f[^%w_]", "%1")
+		code = string.gsub(code, "%f[%w_]v%d+_([%w_]+)%f[^%w_]", "%1")
+		code = string.gsub(code, "%f[%w_]u%d+_([%w_]+)%f[^%w_]", "%1")
+		code = string.gsub(code, "%f[%w_]p%d+_([%w_]+)%f[^%w_]", "%1")
+		
+		return code
+	end)
+
+	if not success then
+		return code
+	end
+
+	return result
+end
+
+--// fully rescripts the porked code to look REAL
+local function rescriptcode(code, skipIndent)
+	if not code or type(code) ~= "string" or #code < 10 then
+		return code
+	end
+
+	local success, result = pcall(function()
+		local varMapping = {}
+		local usedNames = {}
+		local functionParams = {}
+
+		local knownServices = {
+			Workspace = true, Players = true, Lighting = true, ReplicatedStorage = true,
+			ReplicatedFirst = true, ServerStorage = true, ServerScriptService = true,
+			StarterGui = true, StarterPack = true, StarterPlayer = true, Teams = true,
+			SoundService = true, Chat = true, TextChatService = true, RunService = true,
+			TweenService = true, UserInputService = true, HttpService = true, Debris = true
+		}
+
+		local function getUniqueName(base)
+			if not usedNames[base] then
+				usedNames[base] = true
+				return base
+			end
+			local counter = 1
+			while usedNames[base .. counter] do
+				counter = counter + 1
+			end
+			usedNames[base .. counter] = true
+			return base .. counter
 		end
 
-		local success, result = pcall(function()
-			local varMapping = {}
-			local usedNames = {}
-			local functionParams = {}
-
-			local knownServices = {
-				Workspace = true, Players = true, Lighting = true, ReplicatedStorage = true,
-				ReplicatedFirst = true, ServerStorage = true, ServerScriptService = true,
-				StarterGui = true, StarterPack = true, StarterPlayer = true, Teams = true,
-				SoundService = true, Chat = true, TextChatService = true, RunService = true,
-				TweenService = true, UserInputService = true, HttpService = true, Debris = true
-			}
-
-			local function getUniqueName(base)
-				if not usedNames[base] then
-					usedNames[base] = true
-					return base
-				end
-				local counter = 2
-				while usedNames[base .. counter] do
-					counter = counter + 1
-				end
-				usedNames[base .. counter] = true
-				return base .. counter
+		for varName, serviceName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*game:GetService%s*%(%s*[\"']([%w_]+)[\"']%s*%)") do
+			if knownServices[serviceName] then
+				varMapping[varName] = getUniqueName(serviceName)
 			end
+		end
 
-			for varName, serviceName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*game:GetService%s*%(%s*[\"']([%w_]+)[\"']%s*%)") do
-				if knownServices[serviceName] then
-					varMapping[varName] = getUniqueName(serviceName)
-				end
+		for varName, serviceName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*game%.([%w_]+)") do
+			if knownServices[serviceName] then
+				varMapping[varName] = getUniqueName(serviceName)
 			end
+		end
 
-			for varName, serviceName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*game%.([%w_]+)") do
-				if knownServices[serviceName] then
-					varMapping[varName] = getUniqueName(serviceName)
+for varName, modulePath in string.gmatch(code, "local%s+([%w_]+)%s*=%s*require%s*%(") do
+	if varName ~= "_" then
+		local fullRequire = string.match(code, "local%s+" .. varName .. "%s*=%s*require%s*%([^%)]+%.([%w_]+)%s*%)")
+		if fullRequire then
+			varMapping[varName] = getUniqueName(fullRequire)
+		end
+	end
+end
+
+		local firstLine = string.match(code, "^[^\n]+")
+		if firstLine then
+			local moduleVar = string.match(firstLine, "^%s*local%s+([%w_]+)%s*=%s*{")
+			if moduleVar then
+				local returnLine = string.match(code, "return%s+" .. moduleVar .. "%s*;?%s*$")
+				if returnLine then
+					varMapping[moduleVar] = "module"
 				end
 			end
+		end
 
-			for varName, modulePath in string.gmatch(code, "local%s+([%w_]+)%s*=%s*require%s*%(") do
-				local fullRequire = string.match(code, "local%s+" .. varName .. "%s*=%s*require%s*%([^%)]+%.([%w_]+)%s*%)")
-				if fullRequire then
-					varMapping[varName] = getUniqueName(fullRequire)
+		for funcDef in string.gmatch(code, "function%s*%b()") do
+			local params = string.match(funcDef, "%((.-)%)")
+			if params then
+				local paramList = {}
+				for param in string.gmatch(params, "([%w_]+)") do
+					table.insert(paramList, param)
 				end
-			end
 
-			local firstLine = string.match(code, "^[^\n]+")
-			if firstLine then
-				local moduleVar = string.match(firstLine, "^%s*local%s+([%w_]+)%s*=%s*{")
-				if moduleVar then
-					local returnLine = string.match(code, "return%s+" .. moduleVar .. "%s*;?%s*$")
-					if returnLine then
-						varMapping[moduleVar] = "module"
+				if #paramList > 0 then
+					local firstParam = paramList[1]
+					if string.match(firstParam, "^v%d+$") or string.match(firstParam, "^arg%d+$") then
+						functionParams[firstParam] = true
 					end
 				end
 			end
+		end
 
-			for funcDef in string.gmatch(code, "function%s*%b()") do
-				local params = string.match(funcDef, "%((.-)%)")
-				if params then
-					local paramList = {}
-					for param in string.gmatch(params, "([%w_]+)") do
-						table.insert(paramList, param)
-					end
+		for param in pairs(functionParams) do
+			varMapping[param] = "self"
+		end
 
-					if #paramList > 0 then
-						local firstParam = paramList[1]
-						if string.match(firstParam, "^v%d+$") or string.match(firstParam, "^arg%d+$") then
-							functionParams[firstParam] = true
-						end
-					end
-				end
+		for varName, className in string.gmatch(code, "local%s+([%w_]+)%s*=%s*Instance%.new%s*%(%s*[\"']([%w_]+)[\"']%s*%)") do
+			local suggestion = string.lower(string.sub(className, 1, 1)) .. string.sub(className, 2)
+			varMapping[varName] = getUniqueName(suggestion)
+		end
+
+		for varName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*[%w_]+%.Character") do
+			if string.match(varName, "^v%d+$") or string.match(varName, "^l_") then
+				varMapping[varName] = getUniqueName("character")
 			end
+		end
 
-			for param in pairs(functionParams) do
-				varMapping[param] = "self"
+		for varName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*[%w_]+:Clone%s*%(") do
+			if string.match(varName, "^v%d+$") or string.match(varName, "^l_") then
+				varMapping[varName] = getUniqueName("clone")
 			end
+		end
 
-			for varName, className in string.gmatch(code, "local%s+([%w_]+)%s*=%s*Instance%.new%s*%(%s*[\"']([%w_]+)[\"']%s*%)") do
-				local suggestion = string.lower(string.sub(className, 1, 1)) .. string.sub(className, 2)
-				varMapping[varName] = getUniqueName(suggestion)
+		for varName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*{") do
+			if string.match(varName, "^v%d+$") and not varMapping[varName] then
+				varMapping[varName] = getUniqueName("data")
 			end
+		end
 
-			for varName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*[%w_]+%.Character") do
-				if string.match(varName, "^v%d+$") or string.match(varName, "^l_") then
-					varMapping[varName] = getUniqueName("character")
-				end
+		for i, v in string.gmatch(code, "for%s+([%w_]+),%s*([%w_]+)%s+in%s+pairs") do
+			if not varMapping[i] and string.match(i, "^[vk_]") then 
+				varMapping[i] = "key" 
 			end
-
-			for varName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*[%w_]+:Clone%s*%(") do
-				if string.match(varName, "^v%d+$") or string.match(varName, "^l_") then
-					varMapping[varName] = getUniqueName("clone")
-				end
+			if not varMapping[v] and string.match(v, "^v%d+$") then 
+				varMapping[v] = "value" 
 			end
+		end
 
-			for varName in string.gmatch(code, "local%s+([%w_]+)%s*=%s*{") do
-				if string.match(varName, "^v%d+$") and not varMapping[varName] then
-					varMapping[varName] = getUniqueName("data")
-				end
+		for i, v in string.gmatch(code, "for%s+([%w_]+),%s*([%w_]+)%s+in%s+ipairs") do
+			if not varMapping[i] and string.match(i, "^[vi_]") then 
+				varMapping[i] = "index" 
 			end
-
-			for i, v in string.gmatch(code, "for%s+([%w_]+),%s*([%w_]+)%s+in%s+pairs") do
-				if not varMapping[i] and string.match(i, "^[vk_]") then 
-					varMapping[i] = "key" 
-				end
-				if not varMapping[v] and string.match(v, "^v%d+$") then 
-					varMapping[v] = "value" 
-				end
+			if not varMapping[v] and string.match(v, "^v%d+$") then 
+				varMapping[v] = "value" 
 			end
+		end
 
-			for i, v in string.gmatch(code, "for%s+([%w_]+),%s*([%w_]+)%s+in%s+ipairs") do
-				if not varMapping[i] and string.match(i, "^[vi_]") then 
-					varMapping[i] = "index" 
-				end
-				if not varMapping[v] and string.match(v, "^v%d+$") then 
-					varMapping[v] = "value" 
-				end
+		for varName in string.gmatch(code, "for%s+([%w_]+)%s*=%s*") do
+			if not varMapping[varName] and (string.match(varName, "^v%d+$") or varName == "_") then
+				varMapping[varName] = "i"
 			end
+		end
 
-			for varName in string.gmatch(code, "for%s+([%w_]+)%s*=%s*") do
-				if not varMapping[varName] and (string.match(varName, "^v%d+$") or varName == "_") then
-					varMapping[varName] = "i"
-				end
-			end
+		local sortedMappings = {}
+		for oldName, newName in pairs(varMapping) do
+			table.insert(sortedMappings, {old = oldName, new = newName, len = #oldName})
+		end
+		table.sort(sortedMappings, function(a, b)
+			return a.len > b.len
+		end)
 
-			local sortedMappings = {}
-			for oldName, newName in pairs(varMapping) do
-				table.insert(sortedMappings, {old = oldName, new = newName, len = #oldName})
-			end
-			table.sort(sortedMappings, function(a, b)
-				return a.len > b.len
-			end)
+		for _, mapping in ipairs(sortedMappings) do
+			local escapedOld = string.gsub(mapping.old, "([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+			code = string.gsub(code, "%f[%w_]" .. escapedOld .. "%f[^%w_]", mapping.new)
+		end
 
-			for _, mapping in ipairs(sortedMappings) do
-				local escapedOld = string.gsub(mapping.old, "([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
-				code = string.gsub(code, "%f[%w_]" .. escapedOld .. "%f[^%w_]", mapping.new)
-			end
-
-			code = string.gsub(code, 'game%["Run Service"%]', "game:GetService('RunService')")
-			code = string.gsub(code, 'game%.Debris', "game:GetService('Debris')")
-
+		code = string.gsub(code, 'game%["Run Service"%]', "game:GetService('RunService')")
+		code = string.gsub(code, 'game%.Debris', "game:GetService('Debris')")
+		if not skipIndent then
 			local lines = {}
 			local indentLevel = 0
 			local indentChar = "\t"
@@ -3033,7 +3062,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 						string.match(trimmed, "^end$") or
 						string.match(trimmed, "^else") or 
 						string.match(trimmed, "^elseif") or
-						string.match(trimmed, "^until")
+						string.match(trimmed, "^until") or
+						string.match(trimmed, "^}") or
+						(string.match(trimmed, "^%)") and not string.match(trimmed, "^%)%s*%("))
 
 					if shouldUnindent and indentLevel > 0 then
 						indentLevel = indentLevel - 1
@@ -3044,6 +3075,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					local shouldIndent = string.match(trimmed, "then%s*$") or
 						string.match(trimmed, "do%s*$") or
 						string.match(trimmed, "repeat%s*$") or
+						string.match(trimmed, "{%s*$") or
 						(string.match(trimmed, "^function") and not string.match(trimmed, "end%s*$")) or
 						(string.match(trimmed, "=%s*function") and not string.match(trimmed, "end%s*$"))
 
@@ -3058,188 +3090,188 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			end
 
 			code = table.concat(lines, "\n")
-
-			code = string.gsub(code, "\n\n\n+", "\n\n")
-			code = string.gsub(code, "[ \t]+\n", "\n")
-			code = string.gsub(code, "[ \t]+$", "")
-			code = string.gsub(code, ";%s*\n", "\n")
-
-			return code
-		end)
-
-		if not success then
-			return code
 		end
 
-		return result
+		code = string.gsub(code, "\n\n\n+", "\n\n")
+		code = string.gsub(code, "[ \t]+\n", "\n")
+		code = string.gsub(code, "[ \t]+$", "")
+		code = string.gsub(code, ";%s*\n", "\n")
+
+		return code
+	end)
+
+	if not success then
+		return code
 	end
-	local function johnpork(code)
-		if not code or type(code) ~= "string" or #code < 10 then
-			return code
-		end
 
-		local success, result = pcall(function()
-			local varMapping = {}
-			for genericName, actualName in string.gmatch(code, "local%s+function%s+(v%d+)%s*%b()%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
-				varMapping[genericName] = actualName
-			end
-			for genericName, actualName in string.gmatch(code, "local%s+function%s+(v%d+)%s*%b()%s*%-%-%[%[%s*Line:%s*%d+%s*%]%]%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
-				varMapping[genericName] = actualName
-			end
-			for genericName, actualName in string.gmatch(code, "local%s+(v%d+)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
-				varMapping[genericName] = actualName
-			end
-			for genericName, actualName in string.gmatch(code, "local%s+(v%d+)%s*=%s*[^\n]+%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
-				varMapping[genericName] = actualName
-			end
-			for genericNames, actualNames in string.gmatch(code, "local%s+([v%d,%s]+)%s*%-%-%[%[%s*Names:%s*([%w_,%s]+)%s*%]%]") do
-				local genList = {}
-				local actList = {}
+	return lookgreat(result)
+end
 
-				for name in string.gmatch(genericNames, "v%d+") do
-					table.insert(genList, name)
-				end
+--// fixes alot of stuff like comments and function names
 
-				for name in string.gmatch(actualNames, "[%w_]+") do
-					table.insert(actList, name)
-				end
-
-				for i = 1, math.min(#genList, #actList) do
-					varMapping[genList[i]] = actList[i]
-				end
-			end
-			for genericNames, actualNames in string.gmatch(code, "local%s+([v%d,%s]+)%s*=%s*[^\n]+%s*%-%-%[%[%s*Names:%s*([%w_,%s]+)%s*%]%]") do
-				local genList = {}
-				local actList = {}
-
-				for name in string.gmatch(genericNames, "v%d+") do
-					table.insert(genList, name)
-				end
-
-				for name in string.gmatch(actualNames, "[%w_]+") do
-					table.insert(actList, name)
-				end
-
-				for i = 1, math.min(#genList, #actList) do
-					varMapping[genList[i]] = actList[i]
-				end
-			end
-
-			for genericName, actualName in string.gmatch(code, "for%s+(v%d+)%s*=%s*[^\n]+do%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
-				varMapping[genericName] = actualName
-			end
-			for genericNames, actualNames in string.gmatch(code, "for%s+([v%d,%s]+)%s*in%s*[^\n]+do%s*%-%-%[%[%s*Names:%s*([%w_,%s]+)%s*%]%]") do
-				local genList = {}
-				local actList = {}
-
-				for name in string.gmatch(genericNames, "v%d+") do
-					table.insert(genList, name)
-				end
-
-				for name in string.gmatch(actualNames, "[%w_]+") do
-					table.insert(actList, name)
-				end
-
-				for i = 1, math.min(#genList, #actList) do
-					varMapping[genList[i]] = actList[i]
-				end
-			end
-			for genericParams, actualParams in string.gmatch(code, "(%b())%s*%-%-%[%[%s*Params:%s*([%w_,%s]+)%s*%]%]") do
-				local cleanGeneric = string.gsub(genericParams, "[()]", "")
-				local genList = {}
-				local actList = {}
-
-				for name in string.gmatch(cleanGeneric, "v%d+") do
-					table.insert(genList, name)
-				end
-
-				for name in string.gmatch(actualParams, "[%w_]+") do
-					table.insert(actList, name)
-				end
-
-				for i = 1, math.min(#genList, #actList) do
-					varMapping[genList[i]] = actList[i]
-				end
-			end
-			code = string.gsub(code, "%f[%w_]f_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
-			code = string.gsub(code, "%f[%w_]a_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
-			code = string.gsub(code, "%f[%w_]t_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
-			code = string.gsub(code, "%f[%w_]l_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
-			code = string.gsub(code, "%f[%w_]v_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
-			code = string.gsub(code, "([%w_]+)_u%f[^%w_]", "%1")
-			code = string.gsub(code, "([%w_]+)_l%f[^%w_]", "%1")
-			code = string.gsub(code, "([%w_]+)_t%f[^%w_]", "%1")
-			code = string.gsub(code, "([%w_]+)_v%f[^%w_]", "%1")
-			code = string.gsub(code, "([%w_]+)_f%f[^%w_]", "%1")
-			code = string.gsub(code, "([%w_]+)_a%f[^%w_]", "%1")
-			code = string.gsub(code, "%s*%-%-%[%[%s*Name:%s*[^%]]+%]%]", "")
-			code = string.gsub(code, "%s*%-%-%[%[%s*Names:%s*[^%]]+%]%]", "")
-			code = string.gsub(code, "%s*%-%-%[%[%s*Params:%s*[^%]]+%]%]", "")
-			code = string.gsub(code, "%s*%-%-%[%[%s*Line:%s*[^%]]+%]%]", "")
-			code = string.gsub(code, "%s*%-%- upvalues:[^\n]*\n?", "")
-			code = string.gsub(code, "%-%-%[%[.-%]%]", "") 
-			code = string.gsub(code, "([%)%}%]])%s+(local%s+)", "%1\n\t%2")
-			code = string.gsub(code, "(end)%s+(local%s+)", "%1\n\t%2")
-			code = string.gsub(code, "(else)%s+(local%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "(then)%s+(local%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "(do)%s+(local%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "([%)%}%]])%s+(if%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "(end)%s+(if%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "(else)%s+(if%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "([%)%}%]])%s+(for%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "(end)%s+(for%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "(do)%s+(for%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "([%)%}%]])%s+(while%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "(end)%s+(while%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "([%)%}%]])%s+(return%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "(else)%s+(return%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "(then)%s+(return%s+)", "%1\n\t\t%2")
-			code = string.gsub(code, "([%)%}%]])%s+(function%s+)", "%1\n\t%2")
-			code = string.gsub(code, "(end)%s+(function%s+)", "%1\n\t%2")
-			code = string.gsub(code, "([^%s])%s+(end)([^%w])", "%1\n\t%2%3")
-			local sortedVars = {}
-			for gen, act in pairs(varMapping) do
-				table.insert(sortedVars, {gen = gen, act = act})
-			end
-
-			table.sort(sortedVars, function(a, b)
-				return #a.gen > #b.gen
-			end)
-			for _, pair in ipairs(sortedVars) do
-				local gen = pair.gen
-				local act = pair.act
-				local escapedGen = string.gsub(gen, "([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
-				code = string.gsub(code, "%f[%w_]" .. escapedGen .. "%f[^%w_]", act)
-			end
-			code = string.gsub(code, "[ \t]+\n", "\n")
-			code = string.gsub(code, "[ \t]+$", "")
-			code = string.gsub(code, "\n\n\n+", "\n\n")
-			code = string.gsub(code, ",([^%s])", ", %1")
-			code = string.gsub(code, "([%w_])=([%w_])", "%1 = %2")
-			code = string.gsub(code, "([%w_])==([%w_])", "%1 == %2")
-			code = string.gsub(code, "([%w_])~=([%w_])", "%1 ~= %2")
-			code = string.gsub(code, "([%w_])<([%w_])", "%1 < %2")
-			code = string.gsub(code, "([%w_])>([%w_])", "%1 > %2")
-			code = string.gsub(code, "([%w_])<=([%w_])", "%1 <= %2")
-			code = string.gsub(code, "([%w_])>=([%w_])", "%1 >= %2")
-			local lines = {}
-			for line in string.gmatch(code, "[^\n]+") do
-				local indent = string.match(line, "^[\t ]+") or ""
-				local content = string.gsub(line, "^[\t ]+", "")
-				indent = string.gsub(indent, "    ", "\t")
-				table.insert(lines, indent .. content)
-			end
-			code = table.concat(lines, "\n")
-			return code
-		end)
-
-		if not success then
-			warn("Error during decompilation: ", result)
-			return code
-		end
-
-		return rescriptcode(result)
+local function johnpork(code)
+	if not code or type(code) ~= "string" or #code < 10 then
+		return code
 	end
+	local success, result = pcall(function()
+		local varMapping = {}
+		for genericName, actualName in string.gmatch(code, "local%s+function%s+(v%d+)%s*%b()%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
+			varMapping[genericName] = actualName
+		end
+		for genericName, actualName in string.gmatch(code, "local%s+function%s+(v%d+)%s*%b()%s*%-%-%[%[%s*Line:%s*%d+%s*%]%]%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
+			varMapping[genericName] = actualName
+		end
+		for genericName, actualName in string.gmatch(code, "local%s+(v%d+)%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
+			varMapping[genericName] = actualName
+		end
+		for genericName, actualName in string.gmatch(code, "local%s+(v%d+)%s*=%s*[^\n]+%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
+			varMapping[genericName] = actualName
+		end
+		for genericNames, actualNames in string.gmatch(code, "local%s+([v%d,%s]+)%s*%-%-%[%[%s*Names:%s*([%w_,%s]+)%s*%]%]") do
+			local genList = {}
+			local actList = {}
+			for name in string.gmatch(genericNames, "v%d+") do
+				table.insert(genList, name)
+			end
+			for name in string.gmatch(actualNames, "[%w_]+") do
+				table.insert(actList, name)
+			end
+			for i = 1, math.min(#genList, #actList) do
+				varMapping[genList[i]] = actList[i]
+			end
+		end
+		for genericNames, actualNames in string.gmatch(code, "local%s+([v%d,%s]+)%s*=%s*[^\n]+%s*%-%-%[%[%s*Names:%s*([%w_,%s]+)%s*%]%]") do
+			local genList = {}
+			local actList = {}
+			for name in string.gmatch(genericNames, "v%d+") do
+				table.insert(genList, name)
+			end
+			for name in string.gmatch(actualNames, "[%w_]+") do
+				table.insert(actList, name)
+			end
+			for i = 1, math.min(#genList, #actList) do
+				varMapping[genList[i]] = actList[i]
+			end
+		end
+		for genericName, actualName in string.gmatch(code, "for%s+(v%d+)%s*=%s*[^\n]+do%s*%-%-%[%[%s*Name:%s*([%w_]+)%s*%]%]") do
+			varMapping[genericName] = actualName
+		end
+		for genericNames, actualNames in string.gmatch(code, "for%s+([v%d,%s]+)%s*in%s*[^\n]+do%s*%-%-%[%[%s*Names:%s*([%w_,%s]+)%s*%]%]") do
+			local genList = {}
+			local actList = {}
+
+			for name in string.gmatch(genericNames, "v%d+") do
+				table.insert(genList, name)
+			end
+
+			for name in string.gmatch(actualNames, "[%w_]+") do
+				table.insert(actList, name)
+			end
+
+			for i = 1, math.min(#genList, #actList) do
+				varMapping[genList[i]] = actList[i]
+			end
+		end
+		for genericParams, actualParams in string.gmatch(code, "(%b())%s*%-%-%[%[%s*Params:%s*([%w_,%s]+)%s*%]%]") do
+			local cleanGeneric = string.gsub(genericParams, "[()]", "")
+			local genList = {}
+			local actList = {}
+
+			for name in string.gmatch(cleanGeneric, "v%d+") do
+				table.insert(genList, name)
+			end
+
+			for name in string.gmatch(actualParams, "[%w_]+") do
+				table.insert(actList, name)
+			end
+
+			for i = 1, math.min(#genList, #actList) do
+				varMapping[genList[i]] = actList[i]
+			end
+		end
+		code = string.gsub(code, "%f[%w_]f_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
+		code = string.gsub(code, "%f[%w_]a_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
+		code = string.gsub(code, "%f[%w_]t_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
+		code = string.gsub(code, "%f[%w_]l_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
+		code = string.gsub(code, "%f[%w_]v_([%w_]+)_%d+_[ultvfa]%f[^%w_]", "%1")
+		code = string.gsub(code, "([%w_]+)_u%f[^%w_]", "%1")
+		code = string.gsub(code, "([%w_]+)_l%f[^%w_]", "%1")
+		code = string.gsub(code, "([%w_]+)_t%f[^%w_]", "%1")
+		code = string.gsub(code, "([%w_]+)_v%f[^%w_]", "%1")
+		code = string.gsub(code, "([%w_]+)_f%f[^%w_]", "%1")
+		code = string.gsub(code, "([%w_]+)_a%f[^%w_]", "%1")
+		code = string.gsub(code, "%s*%-%-%[%[%s*Name:%s*[^%]]+%]%]", "")
+		code = string.gsub(code, "%s*%-%-%[%[%s*Names:%s*[^%]]+%]%]", "")
+		code = string.gsub(code, "%s*%-%-%[%[%s*Params:%s*[^%]]+%]%]", "")
+		code = string.gsub(code, "%s*%-%-%[%[%s*Line:%s*[^%]]+%]%]", "")
+		code = string.gsub(code, "%s*%-%- upvalues:[^\n]*\n?", "")
+		code = string.gsub(code, "%-%-%[%[.-%]%]", "") 
+		code = string.gsub(code, "([%)%}%]])%s+(local%s+)", "%1\n%2")
+		code = string.gsub(code, "(end)%s+(local%s+)", "%1\n%2")
+		code = string.gsub(code, "(else)%s+(local%s+)", "%1\n\t%2")
+		code = string.gsub(code, "(then)%s+(local%s+)", "%1\n\t%2")
+		code = string.gsub(code, "(do)%s+(local%s+)", "%1\n\t%2")
+		code = string.gsub(code, "([%)%}%]])%s+(if%s+)", "%1\n%2")
+		code = string.gsub(code, "(end)%s+(if%s+)", "%1\n%2")
+		code = string.gsub(code, "(else)%s+(if%s+)", "%1\n\t%2")
+		code = string.gsub(code, "([%)%}%]])%s+(for%s+)", "%1\n%2")
+		code = string.gsub(code, "(end)%s+(for%s+)", "%1\n%2")
+		code = string.gsub(code, "(do)%s+(for%s+)", "%1\n\t%2")
+		code = string.gsub(code, "([%)%}%]])%s+(while%s+)", "%1\n%2")
+		code = string.gsub(code, "(end)%s+(while%s+)", "%1\n%2")
+		code = string.gsub(code, "([%)%}%]])%s+(return%s+)", "%1\n%2")
+		code = string.gsub(code, "(else)%s+(return%s+)", "%1\n\t%2")
+		code = string.gsub(code, "(then)%s+(return%s+)", "%1\n\t%2")
+		code = string.gsub(code, "([%)%}%]])%s+(function%s+)", "%1\n%2")
+		code = string.gsub(code, "(end)%s+(function%s+)", "%1\n%2")
+		code = string.gsub(code, "([^%s])%s+(end)([^%w])", "%1\n%2%3")
+		local sortedVars = {}
+		for gen, act in pairs(varMapping) do
+			table.insert(sortedVars, {gen = gen, act = act})
+		end
+
+		table.sort(sortedVars, function(a, b)
+			return #a.gen > #b.gen
+		end)
+		
+		for _, pair in ipairs(sortedVars) do
+			local gen = pair.gen
+			local act = pair.act
+			local escapedGen = string.gsub(gen, "([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+			code = string.gsub(code, "%f[%w_]" .. escapedGen .. "%f[^%w_]", act)
+		end
+		
+		code = string.gsub(code, "[ \t]+\n", "\n")
+		code = string.gsub(code, "[ \t]+$", "")
+		code = string.gsub(code, "\n\n\n+", "\n\n")
+		code = string.gsub(code, ",([^%s])", ", %1")
+		code = string.gsub(code, "([%w_])=([%w_])", "%1 = %2")
+		code = string.gsub(code, "([%w_])==([%w_])", "%1 == %2")
+		code = string.gsub(code, "([%w_])~=([%w_])", "%1 ~= %2")
+		code = string.gsub(code, "([%w_])<([%w_])", "%1 < %2")
+		code = string.gsub(code, "([%w_])>([%w_])", "%1 > %2")
+		code = string.gsub(code, "([%w_])<=([%w_])", "%1 <= %2")
+		code = string.gsub(code, "([%w_])>=([%w_])", "%1 >= %2")
+		local lines = {}
+		for line in string.gmatch(code, "[^\n]+") do
+			local indent = string.match(line, "^[\t ]+") or ""
+			local content = string.gsub(line, "^[\t ]+", "")
+			indent = string.gsub(indent, "    ", "\t")
+			table.insert(lines, indent .. content)
+		end
+		code = table.concat(lines, "\n")
+		
+		return code
+	end)
+
+	if not success then
+		warn("Error during decompilation: ", result)
+		return code
+	end
+
+	return rescriptcode(result)
+end
+
 	if getscriptbytecode then
 		getbytecode = construct_TimeoutHandler(3, getscriptbytecode) -- ? Solara fix
 	end
