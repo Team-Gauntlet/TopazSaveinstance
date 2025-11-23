@@ -3706,259 +3706,742 @@ end
 		end
 	end
 
-local CHUNK_LIMIT = 200 * 1024 * 1024
-local SaveCacheInterval = 500 
+	local CHUNK_LIMIT = 200 * 1024 * 1024 -- string length overflow prevention
+	local function save_cache(final)
+		local savestr = table.concat(savebuffer)
+		currentstr ..= savestr -- TODO: Causes "not enough memory" error on some exec
 
--- Local caches
-local DescriptorCache = {}
-local DefaultInstanceCache = {}
-local CurrentChunks = {}
-local SaveBuffer = {}
-local SaveBufferSize = 1
-local Chunks = {}
-local CurrentSize = 0
-local TotalSize = 0
+		-- writefile(placename, totalstr)
+		-- appendfile(placename, savestr) -- * supposedly causes uneven amount of Tags (e.g. <Item> must be closed with </Item> but sometimes there's more of one than the other). While being under load, the function produces unexpected output?
+		local savestr_len = #savestr
+		totalsize += savestr_len
+		currentsize += savestr_len
 
-local function save_cache(final)
-    if SaveBufferSize > 1 then
-        local savestr = table.concat(SaveBuffer)
-        table.insert(CurrentChunks, savestr)
-        TotalSize += #savestr
-        CurrentSize += #savestr
+		table.clear(savebuffer)
+		savebuffer_size = 1
 
-        table.clear(SaveBuffer)
-        SaveBufferSize = 1
-    end
+		if CHUNK_LIMIT < currentsize or final then
+			table.insert(chunks, { size = currentsize, str = currentstr })
+			currentstr, currentsize = "", 0
+		end
 
-    if final or CurrentSize >= CHUNK_LIMIT then
-        table.insert(Chunks, { size = CurrentSize, str = table.concat(CurrentChunks) })
-        table.clear(CurrentChunks)
-        CurrentSize = 0
-    end
+		if StatusText then
+			StatusText.Text = "Saving.. Size: " .. get_size_format()
+		end
+		-- ? Needed for at least 1fps (status text)
+		-- task.wait()
+		wait_for_render()
+	end
 
-    if StatusText then
-        StatusText.Text = "Saving.. Size: " .. get_size_format()
-    end
-    wait_for_render()
-end
+	local function save_specific(className, properties)
+		local Ref = Instance.new(className) -- ! Assuming anything passed here is Creatable
+		local Item = ReturnItem(Ref.ClassName, Ref)
 
-local function save_hierarchy(hierarchy)
-    local stack = {}
-    for i = #hierarchy, 1, -1 do
-        stack[#stack+1] = hierarchy[i]
-    end
+		for propertyName, data in properties do
+			-- data = {raw, ValueType, Optional}
+			local raw, ValueType, Optional = data.raw, data.ValueType, data.Optional
+			local value, tag
+			if ValueType == "Class" then
+				tag = "ref"
+				if raw then
+					value = GetRef(raw)
+				else
+					value = "null"
+				end
+			elseif ValueType == "Enum" then
+				value, tag = XML_Descriptors.__ENUM(raw)
+			else
+				local Descriptor = XML_Descriptors[ValueType]
 
-    while #stack > 0 do
-        local instance = table.remove(stack)
-        if IgnoreNotArchivable and not instance.Archivable then
-            continue
-        end
+				if Descriptor then
+					value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
+				elseif ValueType == "ProtectedString" then
+					tag = "ProtectedString"
+					value = XML_Descriptors.__PROTECTEDSTRING(raw)
+				elseif Optional then
+					Descriptor = XML_Descriptors[Optional]
 
-        local SkipEntirely = IgnoreList[instance]
-        if SkipEntirely then
-            continue
-        end
+					if Descriptor then
+						if raw == nil then
+							-- * It can be empty, because it's optional
+							-- ? Though why even save it if it's empty considering it's optional
+							continue
+							-- value, tag = "", ValueType
+						else
+							value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
+						end
+					end
+				end
+			end	
+			if tag then
+				Item ..= ReturnProperty(tag, propertyName, value)
+			end
+		end
+		Item ..= "</Properties>"
+		return Item
+	end
+	local function SaveAttributes(instance, useNotSaveableProperties, Prefix, InstanceToSet, classesToStopBefore)
+		if instance:GetAttribute(__BREAK) then
+			instance:SetAttribute(__BREAK, nil)
+			return
+		end
 
-        local ClassName = instance.ClassName
-        local InstanceName = instance.Name
+		if not InstanceToSet then
+			InstanceToSet = instance
+		end	
 
-        if IgnoreList[ClassName] and (IgnoreList[ClassName] == true or IgnoreList[ClassName][InstanceName]) then
-            continue
-        end
+		local ClassName = instance.ClassName
+		local TableToUse
+		if useNotSaveableProperties then 
+			TableToUse = notsaveable_inherited_properties
+		else
+			TableToUse = notcreatablefixes_inherited_properties
+		end
+		local proplist = TableToUse[ClassName]
+		if not proplist then
+			proplist = GetInheritedProps(ClassName, useNotSaveableProperties, classesToStopBefore)
+			TableToUse[ClassName] = proplist
+		end
+		for _, Property in proplist do
+			local PropertyName = Property.Name
+			if IgnoreProperties[PropertyName] or ArrayToDict({"PrivateServerOwnerId", "PrivateServerId", "VIPServerId", "VIPServerOwnerId", "Attributes", "AttributesReplicate"})[PropertyName] then -- The private server ones cannot be read on the client and produce warnings when read, the attributes properties contain data from SaveAsAttributes.
+				continue
+			end
 
-        if Crashlog then Crashlog("Saving Instance "..instance:GetFullName().." Class "..ClassName) end
+			if IgnoreSharedStrings and Property.ValueType == "SharedString" then -- ? More info in Options
+				continue
+			end
 
-        if SaveAsAttributes then
-            SaveAttributes(instance, true, "__NotSaveable_")
-        end
+			local Special, Category, Optional = Property.Special, Property.Category, Property.Optional
 
-        local InstanceOverride, ClassNameOverride, ClassTagOverride
-        local Fix = NotCreatableFixes[ClassName]
+			local raw = ReadPropertyFull(instance, Property, PropertyName, Special, Category, Optional)
 
-        if Fix then
-            if SaveNotCreatable then
-                if SavePropsAsAttributesForNotCreatableFixes then
-                    local classesToStopBefore = {Fix, "Instance"}
-                    SaveAttributes(instance, false, "__NotCreatableFix_", nil, classesToStopBefore)
-                end
-                ClassName, InstanceOverride = Fix, replaceClassName(instance, InstanceName, ClassName)
-            else
-                continue
-            end
-        else
-            if TreatUnionsAsParts and instance:IsA("PartOperation") then
-                ClassName, InstanceOverride = "Part", replaceClassName(instance, InstanceName, ClassName)
-                ClassNameOverride = "BasePart"
-            elseif not ClassList[ClassName] then
-                if __DEBUG_MODE then __DEBUG_MODE("Class not Found", ClassName) end
-                ClassTagOverride = ClassName
-                ClassName = "Folder"
-            end
-        end
+			if raw == __BREAK then
+				continue
+			end
 
-        if not InstanceOverride then
-            InstanceOverride = InstancesOverrides[instance]
-        end
+			local value = ReturnAttributeValue(Property, raw)
+			if value ~= nil then
+				local ok, errorm = pcall(function()
+					InstanceToSet:SetAttribute(Prefix .. string.gsub(PropertyName, "[^%w_]+", ""), value) -- Attribute name has the prefix __NotSaveable_ or (insert other prefix)_  then the property name with all non alphanumeric characters removed besides underscores
+				end)
+				if not ok and __DEBUG_MODE then
+					__DEBUG_MODE("Failed to set property "..PropertyName.." for SaveAsAttributes. Error Message: "..errorm)
+				end
+			end
+		end
+	end
+	local function save_hierarchy(hierarchy)
+		for _, instance in hierarchy do
+			if IgnoreNotArchivable and not instance.Archivable then
+				continue
+			end
 
-        if InstanceOverride and InstanceOverride.__SaveSpecific then
-            SaveBuffer[SaveBufferSize] = save_specific(ClassName, InstanceOverride.Properties)
-            SaveBufferSize += 1
-        else
-            SaveBuffer[SaveBufferSize] = ReturnItem(ClassTagOverride or ClassName, instance)
-            SaveBufferSize += 1
+			local SkipEntirely = IgnoreList[instance]
+			if SkipEntirely then
+				continue
+			end
 
-            -- Save properties
-            local proplist = inherited_properties[ClassNameOverride or ClassName]
-            if not proplist then
-                proplist = GetInheritedProps(ClassNameOverride or ClassName)
-                inherited_properties[ClassNameOverride or ClassName] = proplist
-            end
+			local ClassName = instance.ClassName
 
-            local default_instance = nil
-            if IgnoreDefaultProperties then
-                default_instance = DefaultInstanceCache[ClassName]
-                if not default_instance then
-                    local ok, inst = pcall(Instance.new, ClassName)
-                    if ok then
-                        DefaultInstanceCache[ClassName] = {}
-                        default_instance = DefaultInstanceCache[ClassName]
-                    end
-                end
-            end
+			local InstanceName = instance.Name
 
-            for _, Property in ipairs(proplist) do
-                local PropertyName = Property.Name
-                if IgnoreProperties[PropertyName] then continue end
-                if IgnoreSharedStrings and Property.ValueType == "SharedString" then continue end
+			do
+				local OnIgnoredList = IgnoreList[ClassName]
+				if OnIgnoredList and (OnIgnoredList == true or OnIgnoredList[InstanceName]) then
+					continue
+				end
+			end
 
-                local raw = ReadPropertyFull(instance, Property, PropertyName, Property.Special, Property.Category, Property.Optional)
-                if raw == __BREAK then continue end
+			if Crashlog then Crashlog("Saving Instance "..instance:GetFullName().." Class "..ClassName) end
 
-                local tag, value
-                local Category, ValueType = Property.Category, Property.ValueType
-                local Descriptor = DescriptorCache[ValueType] or XML_Descriptors[ValueType]
-                DescriptorCache[ValueType] = Descriptor
+			if SaveAsAttributes then
+				SaveAttributes(instance, true, "__NotSaveable_")	
+			end
 
-                if Category == "Class" then
-                    tag = "Ref"
-                    value = raw and GetRef(raw) or "null"
-                elseif Category == "Enum" then
-                    value, tag = XML_Descriptors.__ENUM(raw)
-                elseif ValueType == "ProtectedString" then
-                    tag = ValueType
-                    value = XML_Descriptors.__PROTECTEDSTRING(raw)
-                elseif Descriptor then
-                    value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
-                elseif Property.Optional then
-                    Descriptor = XML_Descriptors[Property.Optional]
-                    if Descriptor and raw ~= nil then
-                        value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
-                    else
-                        continue
-                    end
-                else
-                    continue
-                end
+			if not DecompileIgnoring then
+				DecompileIgnoring = DecompileIgnore[instance]
 
-                if tag then
-                    SaveBuffer[SaveBufferSize] = ReturnProperty(tag, PropertyName, value)
-                    SaveBufferSize += 1
-                end
-            end
-            SaveBuffer[SaveBufferSize] = "</Properties>"
-            SaveBufferSize += 1
-        end
+				if DecompileIgnoring == nil then
+					local DecompileIgnored = DecompileIgnore[ClassName]
+					if DecompileIgnored then
+						DecompileIgnoring = DecompileIgnored == true or DecompileIgnored[InstanceName]
+					end
+				end
 
-        if SaveBufferSize >= SaveCacheInterval then save_cache() end
+				if DecompileIgnoring then
+					DecompileIgnoring = instance
+				elseif DecompileIgnoring == false then
+					DecompileIgnoring = 1 -- Ignore one instance
+				end
+			end
 
-        if SkipEntirely ~= false then
-            local Children = InstanceOverride and InstanceOverride.__Children or instance:GetChildren()
-            for i = #Children, 1, -1 do
-                stack[#stack+1] = Children[i]
-            end
-        end
+			local InstanceOverride, ClassNameOverride, ClassTagOverride
 
-        SaveBuffer[SaveBufferSize] = "</Item>"
-        SaveBufferSize += 1
-    end
-end
+			do
+				local Fix = NotCreatableFixes[ClassName]
 
-local function save_game()
-    if IsModel then
-        header ..= '<Meta name="ExplicitAutoJoints">true</Meta>'
-    end
+				if Fix then
+					if SaveNotCreatable then
+						if SavePropsAsAttributesForNotCreatableFixes then
+							local classesToStopBefore = {Fix, "Instance"}
+							SaveAttributes(instance, false, "__NotCreatableFix_", nil, classesToStopBefore)
+						end
+						ClassName, InstanceOverride = Fix, replaceClassName(instance, InstanceName, ClassName)
+					else
+						continue -- They won't show up in Studio anyway (Enable SaveNotCreatable if you wish to bypass this)
+					end
+				else -- ! Assuming nothing that is a PartOperation or inherits from it is in NotCreatableFixes
+					if TreatUnionsAsParts and instance:IsA("PartOperation") then
+						ClassName, InstanceOverride = "Part", replaceClassName(instance, InstanceName, ClassName)
+						ClassNameOverride = "BasePart" -- * Mutual Superclass for PartOperation and Part; For properties only
+					elseif not ClassList[ClassName] then -- ? API Dump is outdated then
+						if __DEBUG_MODE then
+							__DEBUG_MODE("Class not Found", ClassName)
+						end
 
-    SaveNotCreatableWillBeEnabled = SaveNotCreatable
-        or (IsolateLocalPlayer or IsolateLocalPlayerCharacter) and IsolateLocalPlayer
-        or IsolatePlayers
-        or NilInstances and global_container.getnilinstances
+						ClassTagOverride = ClassName -- ? To at least retain .ClassName unlike the rest of the class-specific properties
+						ClassName = "Folder" -- ? replaceClassName is not needed because of the ClassTagOverride
+					end
+				end
+			end
 
-    save_hierarchy(ToSaveList)
+			if not InstanceOverride then
+				InstanceOverride = InstancesOverrides[instance]
+			end
 
-    if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
-        local LocalPlayer = service.Players.LocalPlayer
-        if LocalPlayer then
-            if IsolateLocalPlayer then
-                SaveNotCreatable = true
-                save_extra("LocalPlayer", LocalPlayer:GetChildren(), "Folder", GetPropertiesTableFromInstance(LocalPlayer, "Folder"))
-            end
-            if IsolateLocalPlayerCharacter then
-                local LocalPlayerCharacter = LocalPlayer.Character
-                if LocalPlayerCharacter then
-                    save_extra("LocalPlayer Character", LocalPlayerCharacter:GetChildren(), "Model", GetPropertiesTableFromInstance(LocalPlayerCharacter))
-                end
-            end
-        end
-    end
+			-- ? The reason we only save .Name (and few other props in save_specific) is because
+			-- ? we can be sure this is a custom container (ex. NilInstancesFixes)
+			-- ? However, in case of NotCreatableFixes, the Instance might have Tags, Attributes etc. that can potentially be saved (even though it's a Folder)
+			if InstanceOverride and InstanceOverride.__SaveSpecific then
+				savebuffer[savebuffer_size] = save_specific(ClassName, InstanceOverride.Properties) -- ! Assuming anything that has __SaveSpecific will have .Properties
+				savebuffer_size += 1
+			else
+				-- local Properties =
+				savebuffer[savebuffer_size] = ReturnItem(ClassTagOverride or ClassName, instance) -- TODO: Ideally this shouldn't return <Properties> as well as the line below to close it IF  IgnorePropertiesOfNotScriptsOnScriptsMode is ENABLED
+				savebuffer_size += 1
+				if not (IgnorePropertiesOfNotScriptsOnScriptsMode and not isLuaSourceContainer(instance)) then
+					local default_instance, new_def_inst
 
-    if IsolateStarterPlayer then
-        save_extra("StarterPlayer", service.StarterPlayer:GetChildren(), "Folder", GetPropertiesTableFromInstance(service.StarterPlayer, "Folder"))
-    end
+					if IgnoreDefaultProperties then
+						default_instance = default_instances[ClassName]
+						if not default_instance then
+							local ClassTags = ClassList[ClassName].Tags
+							if not (ClassTags and ClassTags.NotCreatable) then -- __api_dump_class_not_creatable__ also indicates this
+								-- ! NotCreatableFixes are exceptions to the check above meaning if we don't keep the NotCreatableFixes updated then Instance.new below might start erroring in the future potentially; HOWEVER IsPropertyModified solves this issue and no updates are really needed as NotCreatableFixes is up-to-date as of VERSION-HERE (which is when IPM gets enabled)
+								local ok, result = pcall(Instance.new, ClassName) -- ! pcall is needed for level 3 execs (for example TestService); EXCEPTION NOTED ABOVE (irrelevant)
 
-    if IsolatePlayers then
-        SaveNotCreatable = true
-        save_extra("Players", service.Players:GetChildren(), "Folder", GetPropertiesTableFromInstance(service.Players, "Folder"))
-    end
+								if ok then
+									new_def_inst = result
+									default_instance = {}
 
-    if NilInstances and global_container.getnilinstances then
-        local nil_instances = {}
-        for _, instance in global_container.getnilinstances() do
-            if instance and instance ~= game then
-                table.insert(nil_instances, instance)
-            end
-        end
-        SaveNotCreatable = true
-        save_extra("Nil Instances", nil_instances)
-    end
+									default_instances[ClassName] = default_instance
+								elseif __DEBUG_MODE then
+									__DEBUG_MODE("Unable to create default Instance x2", ClassName)
+								end	
+							elseif __DEBUG_MODE then
+								__DEBUG_MODE("Unable to create default Instance", ClassName)
+							end
+						end
+					end
+					local proplist
+					do
+						local class = ClassNameOverride or ClassName
+						proplist = inherited_properties[class]
+						if not proplist then
+							proplist = GetInheritedProps(class)
+							inherited_properties[class] = proplist
+						end
+					end
+					for _, Property in proplist do
+						local PropertyName = Property.Name
 
-    if next(SharedStrings) then
-        local tmp = {"<SharedStrings>"}
-        for id, val in pairs(SharedStrings) do
-            tmp[#tmp+1] = string.format('<SharedString md5="%s">%s</SharedString>', id, val)
-        end
-        tmp[#tmp+1] = "</SharedStrings>"
-        SaveBuffer[SaveBufferSize] = table.concat(tmp)
-        SaveBufferSize += 1
-    end
+						if IgnoreProperties[PropertyName] then
+							continue
+						end
 
-    SaveBuffer[SaveBufferSize] = "</roblox><!-- Saved script using Topaz -->"
-    SaveBufferSize += 1
+						local ValueType = Property.ValueType
 
-    save_cache(true)
+						if IgnoreSharedStrings and ValueType == "SharedString" then -- ? More info in Options
+							continue
+						end
 
-    local totalstr = header
-    for _, chunk in ipairs(Chunks) do
-        totalstr ..= chunk.str
-    end
+						local Special, Category, Optional = Property.Special, Property.Category, Property.Optional
 
-    if OPTIONS.Callback then
-        OPTIONS.Callback(totalstr, Chunks, TotalSize)
-    else
-        writefile(placename, totalstr)
-    end
+						local raw = ReadPropertyFull(instance, Property, PropertyName, Special, Category, Optional)
 
-    table.clear(SharedStrings)
-end
+						if raw == __BREAK then
+							continue
+						end
+
+						if SharedStringOverwrite and ValueType == "BinaryString" then -- TODO: Convert this to table if more types are added
+							ValueType = "SharedString"
+						end
+
+						-- Special = Property.Special -- ? Read TODO below (must be updated if it's used frequently afterwards)
+
+						if
+							default_instance
+							and Property.CanRead ~= false
+							and not Property.Special -- TODO: .Special is checked more than once (because it might be updated during ReadProperty)
+							and not (PropertyName == "Source" and isLuaSourceContainer(instance))
+						then -- ? Could be not just "Source" in the future
+							if new_def_inst then
+								default_instance[PropertyName] = index(new_def_inst, PropertyName)
+							end
+							if default_instance[PropertyName] == raw then
+								continue
+							end
+						end
+
+						-- Serialization start
+
+						local tag, value
+						if Category == "Class" then
+							tag = "Ref"
+							if raw then
+								if SaveNotCreatableWillBeEnabled then
+									local Fix = NotCreatableFixes[raw.ClassName]
+									if
+										Fix
+										and (
+											PropertyName == "PlayerToHideFrom"
+												or ValueType ~= "Instance" and ValueType ~= Fix
+										)
+									then
+										-- * To avoid errors
+										continue
+									end
+								end
+
+								value = GetRef(raw)
+							else
+								value = "null"
+							end
+						elseif Category == "Enum" then -- ! We do this order (Enums before Descriptors) specifically because Font Enum might get a Font Descriptor despite having Enum Category, unlike Font DataType which that Descriptor is meant for
+							value, tag = XML_Descriptors.__ENUM(raw)
+						else
+							local Descriptor = XML_Descriptors[ValueType]
+
+							if Descriptor then
+								value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
+							elseif "ProtectedString" == ValueType then -- TODO: Try fitting this inside Descriptors
+								tag = ValueType
+
+								if PropertyName == "Source" then
+									if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
+										if DecompileIgnoring == 1 then
+											DecompileIgnoring = nil
+										end
+										value = "-- Ignored"
+									else
+										local should_decompile = true
+										local LinkedSource
+										local LinkedSource_Url = instance.LinkedSource -- ! Assuming every Class that has ProtectedString Source property also has a LinkedSource property
+										local hasLinkedSource = LinkedSource_Url ~= ""
+										local LinkedSource_type
+										if hasLinkedSource then
+											local Path = instance:GetFullName()
+											if RecoveredScripts then
+												table.insert(RecoveredScripts, Path)
+											end
+
+											LinkedSource = string.match(LinkedSource_Url, "%w+$") -- TODO: No sure if this pattern matches all possible cases. Example is: 'rbxassetid://0&hash=cd73dd2fe5e5013137231c227da3167e'
+											if LinkedSource then
+												if ScriptCache then
+													local cached = ldeccache[LinkedSource]
+
+													if cached then
+														value = cached
+														should_decompile = nil
+													end
+												end
+												if should_decompile then
+													if DecompileJobless then
+														value = "-- Not found in LinkedSource ScriptCache"
+														should_decompile = nil
+													end
+
+													LinkedSource_type = string.find(LinkedSource, "%a") and "hash"
+														or "id"
+
+													local asset = LinkedSource_type .. "=" .. LinkedSource
+
+													local ok, source = pcall(function()
+														-- Credits @halffalse
+														return HttpGet(
+															"https://assetdelivery.roproxy.com/v1/asset/?" .. asset
+														)
+													end)
+
+													if ok and filterLinkedSource(source) then
+														if ScriptCache then
+															ldeccache[LinkedSource] = source
+														end
+
+														value = source
+
+														should_decompile = nil
+													end
+												end
+											else --if __DEBUG_MODE then -- * We print this anyway because very important
+												warn(
+													"FAILED TO EXTRACT ORIGINAL SCRIPT SOURCE (OPEN A GITHUB ISSUE): ",
+													instance:GetFullName(),
+													LinkedSource_Url
+												)
+											end
+										end
+
+										if should_decompile then
+											local isLocalScript = instance:IsA("LocalScript")
+											if
+												isLocalScript and instance.RunContext == Enum.RunContext.Server
+												or not isLocalScript
+												and instance:IsA("Script")
+												and instance.RunContext ~= Enum.RunContext.Client
+											then
+												value = "-- Server Scripts CANNOT be saved due to Filtering Enabled!" -- TODO: Could be not just server scripts in the future
+											else
+												local IsCompilationError = false
+												if CompilationError then
+													local CompilationMessage = CompilationError(instance)
+													if CompilationMessage then
+														value = CompilationMessage
+														IsCompilationError = true
+													else
+														value = ldecompile(instance)
+													end	
+												else
+													value = ldecompile(instance)
+												end
+
+												local DecompilerFailedMessages = {"Failed to decompile", "Something went wrong when decompiling", "Decompilation failed", "Update the decompiling script", "Check decompiling options for errors", "Failed to generate AST"} 
+												if OPTIONS.SaveBytecodeIfDecompilerFails and SaveBytecode and not IsCompilationError then
+													for _, v in DecompilerFailedMessages do
+														if string.find(value, v, 1, true) then
+															local bc = SaveBytecode(instance)
+															if bc then
+																value = bc..value
+															end
+															break
+														end
+													end
+												end
+												if OPTIONS.SaveBytecode and SaveBytecode and not IsCompilationError then
+													local output = SaveBytecode(instance)
+													if output then
+														value = output .. value
+													end
+												end
+											end
+										end
+
+										value = "-- Saved script using Topaz\n\n"
+											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
+											.. value
+									end
+								end
+								value = XML_Descriptors.__PROTECTEDSTRING(value)
+							else
+								--OptionalCoordinateFrame and so on, we make it dynamic
+
+								if Optional then
+									Descriptor = XML_Descriptors[Optional]
+
+									if Descriptor then
+										if raw == nil then
+											-- * It can be empty, because it's optional
+											-- ? Though why even save it if it's empty considering it's optional
+											continue
+											-- value, tag = "", ValueType
+										else
+											value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
+										end
+									end
+								end
+							end
+						end
+
+						if tag then
+							savebuffer[savebuffer_size] = ReturnProperty(tag, PropertyName, value)
+							savebuffer_size += 1
+						else --if __DEBUG_MODE then -- * We print this anyway because very important
+							warn("UNSUPPORTED TYPE (OPEN A GITHUB ISSUE): ", ValueType, ClassName, PropertyName)
+						end
+					end
+				end
+				savebuffer[savebuffer_size] = "</Properties>"
+				savebuffer_size += 1
+
+				if SaveCacheInterval < savebuffer_size then
+					save_cache()
+				end
+			end
+
+			if SkipEntirely ~= false then -- ? We save instance without it's descendants in this case (== false)
+				local Children = InstanceOverride and InstanceOverride.__Children or instance:GetChildren()
+
+				if #Children ~= 0 then
+					save_hierarchy(Children)
+				end
+			end
+
+			if DecompileIgnoring and DecompileIgnoring == instance then
+				DecompileIgnoring = nil
+			end
+
+			savebuffer[savebuffer_size] = "</Item>"
+			savebuffer_size += 1
+		end
+	end
+
+	local function save_extra(name, hierarchy, customClassName, Properties)
+		if not Properties then
+			Properties = {}
+		end
+		Properties["Name"] = {raw = name, ValueType = "string"}
+		savebuffer[savebuffer_size] = save_specific((customClassName or "Folder"), Properties)
+		savebuffer_size += 1
+		if hierarchy then
+			save_hierarchy(hierarchy)
+		end
+		savebuffer[savebuffer_size] = "</Item>"
+		savebuffer_size += 1
+	end
+
+	local function save_game()
+		do
+			if IsModel then
+				--[[
+			-- ? Roblox encodes the following additional attributes. These are not required. Moreover, any defined schemas are ignored, and not required for a file to be valid: xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd"
+			Also http can be converted to https but not sure if Roblox cares
+			-- ? <External>null</External><External>nil</External>  - <External> is a legacy concept that is no longer used.
+		]]
+				header ..= '<Meta name="ExplicitAutoJoints">true</Meta>'
+			end
+
+		end
+
+		-- TODO Find a better solution for this
+		SaveNotCreatableWillBeEnabled = SaveNotCreatable
+			or (IsolateLocalPlayer or IsolateLocalPlayerCharacter) and IsolateLocalPlayer
+			or IsolatePlayers
+			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
+
+		save_hierarchy(ToSaveList)
+
+		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
+			local LocalPlayer = service.Players.LocalPlayer
+			if LocalPlayer then
+				if IsolateLocalPlayer then
+					SaveNotCreatable = true
+					save_extra("LocalPlayer", LocalPlayer:GetChildren(), "Folder", GetPropertiesTableFromInstance(LocalPlayer, "Folder"))
+				end
+				if IsolateLocalPlayerCharacter then
+					local LocalPlayerCharacter = LocalPlayer.Character
+					if LocalPlayerCharacter then
+						save_extra("LocalPlayer Character", LocalPlayerCharacter:GetChildren(), "Model", GetPropertiesTableFromInstance(LocalPlayerCharacter))
+					end
+				end
+			end
+		end
+
+		if IsolateStarterPlayer then
+			-- SaveNotCreatable = true -- TODO: Enable if StarterPlayerScripts or StarterCharacterScripts stop showing up in isolated folder in Studio
+			save_extra("StarterPlayer", service.StarterPlayer:GetChildren(), "Folder", GetPropertiesTableFromInstance(service.StarterPlayer, "Folder"))
+		end
+
+		if IsolatePlayers then
+			SaveNotCreatable = true
+			save_extra("Players", service.Players:GetChildren(), "Folder", GetPropertiesTableFromInstance(service.Players, "Folder"))
+		end
+
+		if NilInstances and global_container.getnilinstances then
+			local nil_instances, nil_instances_size = {}, 1
+
+			local NilInstancesFixes = OPTIONS.NilInstancesFixes
+
+			for _, instance in global_container.getnilinstances() do
+				if instance == game then
+					instance = nil
+					-- break
+				else
+					local ClassName = instance.ClassName
+
+					local Fix = InheritsFix(NilInstancesFixes, ClassName, instance)
+
+					if Fix then
+						instance = Fix(instance, InstancesOverrides)
+						-- continue
+					end
+
+					local Class = ClassList[ClassName]
+					if Class then
+						local ClassTags = Class.Tags
+						if ClassTags and ClassTags.Service then -- For CSGDictionaryService, NonReplicatedCSGDictionaryService, LogService, ProximityPromptService, TestService & more
+							-- instance.Parent = game
+							instance = nil
+							-- continue
+						end
+					end
+				end
+				if instance then
+					nil_instances[nil_instances_size] = instance
+					nil_instances_size += 1
+				end
+			end
+			SaveNotCreatable = true
+			save_extra("Nil Instances", nil_instances)
+		end
+
+		if OPTIONS.ReadMe then
+			save_extra(
+				"README",
+				nil,
+				"Script",
+				{Source = {raw = "--[[\n"
+					.. (#RecoveredScripts ~= 0 and "\t\tIMPORTANT: Original Source of these Scripts was Recovered: " .. service.HttpService:JSONEncode(
+						RecoveredScripts
+						) .. "\n" or "")
+						.. [[
+		Thank you for using Topaz!
+		This version uses the Topaz decompiler for the best script recovery.
+
+		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
+		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
+
+		ServerStorage, ServerScriptService and Server Scripts CANNOT be saved due to Filtering Enabled
+
+		Dont cry if you cant decompile serverscripts, module, and localscripts CAN be saved
+
+		If you cannot spawn into the game, please move PlayerModule in StarterPlayer somewhere else or delete it. Then run `game:GetService("Players").CharacterAutoLoads = true`.
+		And use "Play Here" to start game instead of "Play" to spawn your Character where your Camera currently is.
+
+		If the chat system does not work, please use the explorer and delete everything inside the TextChatService/Chat service(s). 
+		Or run `game:GetService("Chat"):ClearAllChildren() game:GetService("TextChatService"):ClearAllChildren()`
+				
+		If Union and MeshPart collisions don't work, run the script below in the Studio Command Bar:
+				
+		local C = game:GetService("CoreGui")
+		local D = Enum.CollisionFidelity.Default
+				
+		for _, v in game:GetDescendants() do
+			if v:IsA("TriangleMeshPart") and not v:IsDescendantOf(C) then
+				v.CollisionFidelity = D
+			end
+		end
+		print("Done")
+				
+		If you can't move the Camera, run this script in the Studio Command Bar:
+			
+		workspace.CurrentCamera.CameraType = Enum.CameraType.Fixed
+		
+		Or Destroy the Camera.
+
+		This file was generated with the following settings:
+		]]
+						.. service.HttpService:JSONEncode(OPTIONS)
+						.. "\n\n\t\tDecompiler: Topaz"
+						.. "\n\t\tElapsed time: "
+						.. os.clock() - elapse_t
+						.. " PlaceId: "
+						.. game.PlaceId
+						.. " PlaceVersion: "
+						.. game.PlaceVersion
+						.. " Client Version: "
+						.. version()
+						.. " Executor: "
+						.. (identify_executor and table.concat({ identify_executor() }, " ") or "Unknown")
+						.. "\n]]", ValueType = "ProtectedString"}}
+			)
+		end
+		do
+			local tmp = { "<SharedStrings>" }
+			for identifier, value in SharedStrings do
+				table.insert(tmp, '<SharedString md5="' .. identifier .. '">' .. value .. "</SharedString>")
+			end
+
+			if 1 < #tmp then -- TODO: This sucks so much because we try to iterate a table just to check this (check above)
+				savebuffer[savebuffer_size] = table.concat(tmp)
+				savebuffer_size += 1
+				savebuffer[savebuffer_size] = "</SharedStrings>"
+				savebuffer_size += 1
+			end
+		end
+
+		savebuffer[savebuffer_size] =
+			"</roblox><!-- Saved script using Topaz -->"
+		savebuffer_size += 1
+		save_cache(true)
+		do
+			-- ! Assuming we only write to file once hence why we only filter once
+			-- TODO This might cause issues on non-unique Usernames (ex. "Cake" if game is about cakes then everything supposedly related to your name will be replaced with "Roblox"); Certain UserIds might also affect numbers, like if your UserId is 2481848 and there is some number that goes like "1.248184818837" then that the matched part will be replaced with 1, potentially making the number incorrect.
+			-- TODO So for now it's best to keep this disabled by default
+			-- TODO It's also not smart to filter entire file string at the end as this might also affect decompiled scripts content, which has no way of containing any user-related information. It would be better to use gsub in string Descriptor and such
+			if Anonymous then
+				local LocalPlayer = service.Players.LocalPlayer
+				if LocalPlayer then
+					for _, chunk in chunks do
+						chunk.str = gsubCaseInsensitive(
+							string.gsub(chunk.str, LocalPlayer.UserId, Anonymous.UserId),
+							LocalPlayer.Name,
+							Anonymous.Name
+						)
+					end
+				end
+			end
+
+			local Callback = OPTIONS.Callback
+			if Callback then
+				local totalstr = header
+				for _, chunk in chunks do
+					totalstr ..= chunk.str
+				end
+				Callback(totalstr, chunks, totalsize)
+			elseif OPTIONS.AlternativeWritefile and appendfile then
+				local SEGMENT_SIZE = 4145728 -- Celery has an arbitrary savefile/appendfile size limit of ~4MB for reasons unknown. This is a workaround to save the file in segments.
+
+				local totallen, currentlen = math.ceil(totalsize / SEGMENT_SIZE), 1
+
+				writefile(placename, header)
+				for _, chunk in chunks do
+					local length = math.ceil(chunk.size / SEGMENT_SIZE)
+					for i = 1, length do
+						local savestr = string.sub(chunk.str, (i - 1) * SEGMENT_SIZE + 1, i * SEGMENT_SIZE)
+
+						run_with_loading(
+							"Writing to File " .. math.round(currentlen / totallen * 100) .. "% (Depends on Exec)",
+							nil,
+							true,
+							appendfile,
+							placename,
+							savestr
+						)
+						currentlen += 1
+
+						if i ~= length then
+							task.wait()
+						end
+					end
+				end
+			else
+				local totalstr = header
+				for _, chunk in chunks do
+					totalstr ..= chunk.str
+				end
+				run_with_loading(
+					"Writing " .. get_size_format() .. " to File (Depends on Exec)",
+					nil,
+					true,
+					writefile,
+					placename,
+					totalstr
+				)
+			end
+		end
+		table.clear(SharedStrings)
+	end
 
 	local Connections
 	do
